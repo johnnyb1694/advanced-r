@@ -7,11 +7,11 @@ output: github_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## Using `base::switch()`
+## Use `base::switch()` to make choices!
 
 You can often employ the use of `base::switch()` as an alternative to a long series of `if (...) {...} else if (...) {...} ...` statements:
 
-```{r switch}
+```{r switch, eval=FALSE}
 # Acceptable (not not ideal)
 x_option <- function(x) {
   if (x == "a") {
@@ -36,3 +36,27 @@ x_option <- function(x) {
 }
 ```
 
+## Do not 'grow' data in loops!
+
+You often see people attempt to store the result of an iteration in a loop onto the end of an existing R object (iteratively). This should be avoided at all costs as it can lead to severe performance bottlenecks.
+
+Instead, you should **initialise** an empty vector equal to the length of the number of iterations you want to run and *then* populate each entry iteratively. Observe the difference between the following:
+
+```{r}
+# Not even acceptable: this is plain bad!
+n_iterations <- 10000
+rnorm_means <- c()
+for (i in seq_len(n_iterations)) {
+  rnorm_means <- c(rnorm_means, mean(rnorm(n = 100))) 
+}
+
+# Optimal
+n_iterations <- 10000
+rnorm_means <- vector(mode = "numeric", length = n_iterations)
+for (i in seq_len(n_iterations)) {
+  rnorm_means[[i]] <- mean(rnorm(n = 100))
+}
+
+```
+
+Note that you should also avoid using the syntax `1:length(x)` inside a for loop, since the infix operator `:` can create reverse sequences as well as forwards ones (i.e. `1:0` is just as valid as `1:2`). You normally *don't* want your loops to go backwards. As a result, making use of `base::seq_along(x)` or `base::seq_len()` is much more stable.
