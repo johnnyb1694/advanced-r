@@ -1,0 +1,118 @@
+‘Advanced R’ Tips & Tricks
+================
+
+## Use `base::switch()` to make choices!
+
+You can often employ the use of `base::switch()` as an alternative to a
+long series of `if (...) {...} else if (...) {...} ...` statements:
+
+``` r
+# Acceptable (not not ideal)
+x_option <- function(x) {
+  if (x == "a") {
+    "option 1"
+  } else if (x == "b") {
+    "option 2" 
+  } else if (x == "c") {
+    "option 3"
+  } else {
+    stop("Invalid `x` value")
+  }
+}
+
+# Optimal
+x_option <- function(x) {
+  switch(x,
+    a = "option 1",
+    b = "option 2",
+    c = "option 3",
+    stop("Invalid `x` value")
+  )
+}
+```
+
+## Do not ‘grow’ data in loops!
+
+You often see people attempt to store the result of an iteration in a
+loop onto the end of an existing R object (iteratively). This should be
+avoided at all costs as it can lead to severe performance bottlenecks.
+
+Instead, you should **initialise** an empty vector equal to the length
+of the number of iterations you want to run and *then* populate each
+entry iteratively. Observe the difference between the following:
+
+``` r
+# Not even acceptable: this is plain bad!
+n_iterations <- 10000
+rnorm_means <- c()
+for (i in seq_len(n_iterations)) {
+  rnorm_means <- c(rnorm_means, mean(rnorm(n = 100))) 
+}
+
+# Optimal
+n_iterations <- 10000
+rnorm_means <- vector(mode = "numeric", length = n_iterations)
+for (i in seq_len(n_iterations)) {
+  rnorm_means[[i]] <- mean(rnorm(n = 100))
+}
+```
+
+Note that you should also avoid using the syntax `1:length(x)` inside a
+for loop, since the infix operator `:` can create reverse sequences as
+well as forwards ones (i.e. `1:0` is just as valid as `1:2`). You
+normally *don’t* want your loops to go backwards. As a result, making
+use of `base::seq_along(x)` or `base::seq_len()` is much more stable.
+
+## Function jargon
+
+There are many important terms surrounding the use of functions which
+can be important to understand. These include:
+
+-   The `body()`, `formals()` and `environment()` properties of
+    functions, which refer to the source code inside a function, its
+    arguments and its execution environment, respectively
+-   The idea that R functions are **first-class**: this means that R
+    functions are objects in their own right
+-   That there are so-called **primitive** functions in R (e.g. `sum()`)
+    which are written in C
+-   That an R function ‘encloses’ its environment, leading to the common
+    terminology of **closures** as functions
+-   That R functions do not necessarily require a name! You can write
+    **anonymous** functions whenever you feel that a specific function
+    doesn’t warrant a name (i.e. a small function without much re-use
+    value)
+
+## Lazy evaluation
+
+Note that in R, function arguments are only evaluated if they are
+accessed. For example, the following code snippet does *not* return an
+error, despite what you might expect:
+
+``` r
+h <- function(x) {
+  10
+}
+
+h(x = stop("Error!"))
+```
+
+    ## [1] 10
+
+The reason this is the case is that whenever you run a function in R,
+the arguments will be interpreted and stored as so-called **promises**.
+Each argument, as a ‘promise’, will be assigned three properties upon
+function execution:
+
+-   An expression. In the snippet above, this expression is
+    ‘stop(“Error!”)’
+-   An environment for the function to be executed in i.e. the
+    environment where the function is called. In the snippet above, the
+    function is being defined in the global environment so that is where
+    the expression will be evaluated (but *only* if the argument is
+    accessed, see the next bullet)
+-   A value. This value is only calculated if the argument is accessed
+    in the function. It is calculated once and is stored in a virtual
+    cache for the remainder of execution. In the snippet above, we never
+    try to access the argument `x` so the promise remains a promise with
+    only two of three properties: its expression and a potential
+    environment for the expression to be evaluated in.
