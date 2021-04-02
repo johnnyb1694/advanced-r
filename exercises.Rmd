@@ -1,0 +1,11 @@
+---
+title: "'Advanced R' Exercises"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Section 7: Environments ##
+
