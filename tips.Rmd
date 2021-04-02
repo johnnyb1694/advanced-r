@@ -1,5 +1,5 @@
 ---
-title: "'Advanced R' Tips"
+title: "'Advanced R' Tips & Tricks"
 output: github_document
 ---
 
