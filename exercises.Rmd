@@ -3,9 +3,155 @@ title: "'Advanced R' Exercises"
 output: github_document
 ---
 
-```{r setup, include=FALSE}
+```{r setup, include=FALSE, message=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(rlang)
+library(lobstr)
 ```
 
-## Section 7: Environments ##
+### Part 7: Environments ###
+
+## Section 7.2 ##
+
+1. An environment is different to a list in the following regards:
+
+* An environment is *unordered*, whereas a list has an ordering. This is why it is possible to subset on a list using numeric indices
+* In addition, every name must be unique in an environment (likely due to the above)
+* Finally, an environment has a parent
+
+2. 
+
+```{r}
+e1 <- env()
+
+e1$loop <- e1
+
+lobstr::ref(e1)
+```
+
+3. 
+
+```{r}
+e1 <- env()
+e2 <- env()
+
+e1$loop <- e2
+e2$dedoop <- e1
+
+lobstr::ref(e1)
+lobstr::ref(e2)
+```
+
+4. 
+
+The reason why `e[[1]]` doesn't make sense is that an environment object is unordered.
+
+As for `e[c("a", "b")]`, the problem with this is that it isn't possible to return two objects in a suitable data structure.
+
+5. 
+
+```{r}
+bind_new <- function(name, value, base_env) {
+  if (!exists(x = name, where = base_env)) {
+    env_poke(env = base_env, nm = name, value = value)
+  }
+}
+```
+
+An alternative (more elegant) solution can be sourced [here](https://advanced-r-solutions.rbind.io/environments.html).
+
+6. 
+
+This recursive function only rebinds existing variables (and does not bind any new values to any new names, which would introduce non-obvious dependencies)
+
+```{r}
+rebind <- function(name, value, env = caller_env()) {
+  if (identical(env, empty_env())) {
+    stop("Can't find `", name, "`", call. = FALSE)
+  } else if (env_has(env, name)) {
+    env_poke(env, name, value)
+  } else {
+    rebind(name, value, env_parent(env))
+  }
+}
+rebind("a", 10)
+a <- 5
+rebind("a", 10)
+a
+```
+
+## Section 7.3 ##
+
+1. Modification of `where()` to return *all* environments containing a given name:
+
+```{r}
+e1 <- env(e2, 
+          a = 1,
+          b = "text")
+e2 <- env(e3, 
+          b = "more text",
+          c = 3)
+e3 <- env(c = 10)
+
+# Original `where()` - finds the first match of a given name in all ancestor environments
+where <- function(name, env = caller_env()) {
+  if (identical(env, empty_env())) {
+    # Base case
+    stop("Can't find ", name, call. = FALSE)
+  } else if (env_has(env, name)) {
+    # Success case
+    env
+  } else {
+```
+
+
+```{r}
+# Recursive case
+    where(name, env_parent(env))
+  }
+}
+
+# Modified `where()` - finds all matches of a given name in all ancestor environments
+# NB: it's important to assign the argument value for 'locations' in the formals section of the function.
+#     This ensures that the argument 'locations' is evaluated inside the function 
+where_all <- function(name, env = caller_env(), locations = list()) {
+  if (identical(env, empty_env())) {
+    # Base case
+    message("Successfully traversed all ancestors for the variable: ", name)
+    locations
+  } else {
+      if (env_has(env, name)) {
+        locations <- c(locations, env)
+      }
+      where_all(name, env_parent(env), locations)
+  }
+}
+
+where_all(name = "b", env = e1)
+```
+
+2. 
+
+```{r}
+fget <- function(name, env = caller_env(), envs = list()) {
+  if (identical(env, empty_env())) {
+    message("Successfully traversed all ancestors for the variable: ", name)
+    envs
+  } else {
+    obj <- env_get(env = env, nm = name, default = NULL)
+    if (env_has(env = env, nms = name) && is_function(obj)) {
+      envs <- c(envs, env)
+    }
+    fget(name, env_parent(env), envs)
+  }
+}
+
+fget(name = "b", env = e1)
+```
+
+
+
+
+
+
 
