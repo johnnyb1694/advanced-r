@@ -149,7 +149,30 @@ fget <- function(name, env = caller_env(), envs = list()) {
 fget(name = "b", env = e1)
 ```
 
+### Part 8: Conditions ###
 
+## Section 8.2 ##
+
+1. 
+
+```{r}
+file_remove <- function(file_path) {
+  if (!file.exists(file_path)) {
+    rlang::abort("specified file path does not exist!")
+  }
+  invisible(file.remove(file_path))
+}
+
+invisible(file.create("test.txt"))
+
+# File exists
+file_remove(file_path = "test.txt")
+
+# File does not exist
+file_remove(file_path = "test2.txt")
+```
+
+2. The `appendLF` argument of `message()` indicates whether you would like a new line to be created after the end of your call to `message()` (i.e. it is equivalent to the idea in most programming languages of `print(\n)`)
 
 
 
