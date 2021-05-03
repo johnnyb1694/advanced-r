@@ -12,7 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
 You can often employ the use of `base::switch()` as an alternative to a long series of `if (...) {...} else if (...) {...} ...` statements:
 
 ```{r switch, eval=FALSE}
-# Acceptable (not not ideal)
+# Acceptable (but not ideal)
 x_option <- function(x) {
   if (x == "a") {
     "option 1"
@@ -83,8 +83,222 @@ h <- function(x) {
 h(x = stop("Error!"))
 ```
 
-The reason this is the case is that whenever you run a function in R, the arguments will be interpreted and stored as so-called **promises**. Each argument, as a 'promise', will be assigned three properties upon function execution:
+The reason this is the case is that whenever you run a function in R, the arguments will be interpreted and stored as a **promise**, which is an idiosyncratic data structure specific to R. Each argument, as a 'promise', will be assigned three properties upon function execution:
 
-* An expression. In the snippet above, this expression is 'stop("Error!")'
+* An expression. In the snippet above, this expression is `stop("Error!")`
 * An environment for the function to be executed in i.e. the environment where the function is called. In the snippet above, the function is being defined in the global environment so that is where the expression will be evaluated (but *only* if the argument is accessed, see the next bullet)
 * A value. This value is only calculated if the argument is accessed in the function. It is calculated once and is stored in a virtual cache for the remainder of execution. In the snippet above, we never try to access the argument `x` so the promise remains a promise with only two of three properties: its expression and a potential environment for the expression to be evaluated in. 
+
+## Exiting functions
+
+Generally speaking, it is preferable to include an **explicit** `return()` call at the end of the function. This is preferable because it helps other people to understand the purpose of the function which makes it easier to trace back the calculation.
+
+Sometimes, your functions will require a change to the global state of your environment (for example, if you've ever used `setwd()` before, you'll know that this function alters the working directory permanently). To deal with this change upon exiting a function, you might want to add a call to `on.exit(expr, add = TRUE)` in order to deal with any required changes just before the function exits execution!
+
+## Ignoring errors
+
+Note that you can ignore errors by simply writing:
+
+```{r}
+err_fn <- function(x) {
+  try(log(x))
+  print('Did the log work?')
+}
+
+err_fn("a") # notice how execution continues within the function environment
+```
+
+## Handling errors
+
+You can handle errors with `tryCatch()`:
+
+```{r}
+tryCatch(
+  error = function(cnd) {
+    print('Now we have transferred control to here...')
+  },{
+    print('This is fine...')
+    stop()
+  }
+)
+```
+
+Note that `rlang::abort()` captures extra information about errors, at least in comparison to `base::stop()`:
+
+```{r}
+cnd1 <- rlang::catch_cnd(stop("an error"))
+cnd2 <- rlang::catch_cnd(rlang::abort("an error"))
+
+str(cnd1)
+str(cnd2)
+```
+
+## Custom conditions
+
+Let's create custom conditions for `stats::rnorm()`:
+
+```{r error=TRUE}
+rnorm(n = "a")
+rnorm(n = "a", mean = "b", sd = 2) 
+```
+
+Let's be more specific about *which* arguments are problematic. In the second example, the `sd` argument is actually valid, whilst the other arguments are supplied as (problematic) character values.
+
+The following wrapper around `rlang::abort()` constructs more detailed condition objects with extra metadata, including the argument which was problematic, what it must be instead, and what it should not be! In a productionised system, these artifacts can then be extracted for specific error handling:
+
+```{r error=TRUE}
+abort_bad_argument <- function(arg, must, not = NULL) {
+  msg <- glue::glue("`{arg}` must {must}")
+  if (!is.null(not)) {
+    not <- typeof(not)
+    msg <- glue::glue("{msg}; not {not}.")
+  }
+  
+  rlang::abort("error_bad_argument", 
+    message = msg, # constructed from `arg`, `must` and (potentially) `not`
+    arg = arg, 
+    must = must, 
+    not = not
+  )
+}
+
+my_rnorm <- function(n, mean, sd) {
+  if (!is.numeric(n)) {
+    abort_bad_argument("n", must = "be numeric", not = n)
+  }
+  if (!is.numeric(mean)) {
+    abort_bad_argument("mean", must = "be numeric", not = mean)
+  }
+  if (!is.numeric(sd)) {
+    abort_bad_argument("sd", must = "be numeric", not = sd)
+  }
+  
+  stats::rnorm(n = n, mean = mean, sd = sd)
+}
+
+my_rnorm(n = 100, mean = "b", sd = 10)
+```
+## Using conditions more effectively
+
+There are many ways in which one can leverage the R condition system more effectively. 
+
+# Failure values
+
+Sometimes functions we want to return a value regardless of whether the code succeeded or not.
+
+A good example of this would be if you had a list of ages that you wanted to apply log to, say, and one of them was negative. Rather than halt the process, you might decide to replace it with a sensible value (such as `NA_real_`)
+
+```{r}
+test_ages <- rnorm(n = 10, mean = 30, sd = 10)
+test_ages <- c(test_ages, -20)
+
+fail_with <- function(expr, failure_val = NA_real_) {
+  tryCatch(error = function(cnd) {
+    failure_val
+  },
+  log(expr))
+}
+
+suppressWarnings(purrr::map_dbl(test_ages, ~ fail_with(log(.))))
+```
+
+A minor adaptation of the above code can allow us to add a little more metadata to our return values:
+
+```{r}
+safely_exec <- function(expr) {
+  tryCatch(
+    error = function(cnd) {
+      list(result = NULL, error = cnd)
+    },
+    list(result = expr, error = NULL)
+  )
+}
+
+str(safely_exec(2 + 2)) # fine
+str(safely_exec(log("a"))) # error
+```
+
+## Recording conditions, for example messages
+
+Suppose you are running a productionised piece of code which requires some sort of log.
+
+You could scatter relevant messages throughout your script and then wrap the execution of the script into the function presented below. This function will collect all of the messages issued during the execution of the script - you can then opt to transform the resultant list of messages into a more convenient data structure that is more readable for a human being:
+
+```{r error=TRUE}
+with_log <- function(module) {
+  messages <- c()
+  append_message <- function(cnd) {
+    messages <<- append(messages, cnd$message)
+    rlang::cnd_muffle(cnd)
+  }
+  
+  # The code below ensures that message handlers are registered upon running our code. This means that whenever a message is
+  # signaled, control will be transferred to the 'append_message()' function which will append the message to our list
+  withCallingHandlers(
+    message = append_message,
+    module
+  )
+  
+  
+  return(list(module_results = module, module_log = messages))
+}
+
+execute_module <- function() {
+  message("Initiating module...")
+  result <- 4 + 4
+  message("Terminating module...")
+  
+  return(result)
+}
+
+module <- with_log(execute_module())
+```
+
+## Using `purrr::safely()` to impute error values
+
+You can use `purrr::safely()` to successfully exit an invocation of `purrr::map_*()` functions where there might be errors in the process. For example,
+
+```{r}
+x <- list(
+  c(0.512, 0.165, 0.717),
+  c(0.064, 0.781, 0.427),
+  c(0.890, 0.785, 0.495),
+  "oops"
+)
+
+x_out <- purrr::map(x, purrr::safely(sum))
+
+str(x_out)
+```
+
+The function `purrr::safely()` is, in common R parlance, referred to as a *function operator* since it takes a function as an input and returns a function as an output.
+
+By the way, you can transpose the list presented above via `purrr::transpose()`!
+
+```{r}
+x_out_trans <- purrr::transpose(purrr::map(x, purrr::safely(sum)))
+
+str(x_out_trans)
+```
+
+This is a particularly neat coupling of several `purrr` functions which allows you to run a batch process in spite of the occasional failure. Indeed, you might be required to run a series of models on a series of datasets; some of these models might fail due to unforeseen data issues (maybe, for instance, one of the columns has a negative number for which a square root transformation is required). Now, you don't want the entire batch to fail just because one of the iterations might not work. So, you often find that code akin to the below can be quite helpful to run in this scenario:
+
+```{r eval=FALSE}
+execute_engine <- function(input_data) {
+  execute_module1()
+  execute_module2()
+  ..
+}
+
+engine_runs <- transpose(map(datasets, safely(execute_engine)))
+ok <- map_lgl(engine_runs$error, is.null)
+
+# which datasets failed to pass preliminary checks?
+datasets[!ok]
+
+# which runs were successful?
+engine_runs[ok]
+```
+
+
+

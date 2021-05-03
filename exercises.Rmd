@@ -174,7 +174,62 @@ file_remove(file_path = "test2.txt")
 
 2. The `appendLF` argument of `message()` indicates whether you would like a new line to be created after the end of your call to `message()` (i.e. it is equivalent to the idea in most programming languages of `print(\n)`)
 
+## Section 8.5 ##
 
+1.
 
+```{r}
+abort_pkg_missing <- function(pkg) {
+  msg <- glue::glue("Cannot load `{pkg}`! Install package first with `install.packages()`")
+  rlang::abort("err_pkg_missing",
+               message = msg,
+               pkg = pkg)
+}
+
+load_pkg <- function(pkg) {
+  if (!pkg %in% installed.packages()) {
+    abort_pkg_missing(pkg = pkg)
+  }
+  base::requireNamespace(pkg, quietly = F)
+}
+
+pkg_cnd <- load_pkg(pkg = "abc") %>% rlang::catch_cnd()
+
+str(pkg_cnd)
+```
+
+### Part 10: Function factories ###
+
+## Section 10.2 ##
+
+3. 
+
+Creation of a factory to pick element `n` (specified by the user) of a given data structure
+
+```{r}
+pick <- function(n) {
+  function(x) x[[n]]
+}
+
+lapply(mtcars, pick(5))
+```
+
+4. 
+
+Computes the `i`th central moment of an (empirical) numeric vector:
+
+```{r}
+moment <- function(i) {
+  function(x) mean((x - mean(x)) ^ i)
+}
+
+m1 <- moment(1)
+m2 <- moment(2)
+x <- runif(100)
+m1(x)
+m2(x)
+```
+
+### Part 11: Function operators ###
 
 
